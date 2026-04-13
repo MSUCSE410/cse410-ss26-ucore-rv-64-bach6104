@@ -45,6 +45,28 @@ struct proc {
 	struct proc *parent; // Parent process
 	uint64 exit_code;
 	struct file *files[FD_BUFFER_SIZE];
+
+	unsigned int syscall_times[500];
+	uint64 start_time;
+
+	int priority;
+	uint64 stride;
+	uint64 pass;
+};
+
+#define MAX_SYSCALL_NUM 500
+#define BIG_STRIDE 65536
+typedef enum {
+	UnInit = 0,
+	Ready = 1,
+	Running = 2,
+	Exited = 3
+} TaskStatus;
+
+struct TaskInfo {
+	TaskStatus status;
+	unsigned int syscall_times[MAX_SYSCALL_NUM];
+	int time;
 };
 
 int cpuid();
@@ -61,6 +83,7 @@ void add_task(struct proc *);
 struct proc *pop_task();
 struct proc *allocproc();
 int fdalloc(struct file *);
+void freeproc(struct proc *);
 // swtch.S
 void swtch(struct context *, struct context *);
 
