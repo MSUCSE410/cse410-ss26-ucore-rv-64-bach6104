@@ -5,6 +5,8 @@
 #include "syscall_ids.h"
 #include "timer.h"
 #include "trap.h"
+#include "proc.h" 
+#include "vm.h"
 
 uint64 console_write(uint64 va, uint64 len)
 {
@@ -142,16 +144,129 @@ uint64 sys_wait(int pid, uint64 va)
 	return wait(pid, code);
 }
 
+int sys_task_info(struct TaskInfo *ti)
+{
+	struct proc *p = curr_proc();
+	struct TaskInfo temp;
+	
+	temp.status = Running;
+	
+	for (int i = 0; i < MAX_SYSCALL_NUM; i++) {
+		temp.syscall_times[i] = p->syscall_times[i];
+	}
+	
+	uint64 current_cycle = get_cycle();
+	temp.time = (int)((current_cycle - p->start_time) * 1000 / CPU_FREQ);
+	
+	if (copyout(p->pagetable, (uint64)ti, (char *)&temp, sizeof(struct TaskInfo)) < 0) {
+		return -1;
+	}
+	
+	return 0;
+}
+
 uint64 sys_spawn(uint64 va)
 {
-	// TODO: your job is to complete the sys call
-	return -1;
+	struct proc *p = curr_proc();
+	
+	char name[200];
+	if (copyinstr(p->pagetable, name, va, 200) < 0) {
+		return -1;
+	}
+	
+	struct inode *ip;
+	if ((ip = namei(name)) == 0) {
+		return -1;
+	}
+	
+	struct proc *np = allocproc();
+	if (np == 0) {
+		iput(ip);
+		return -1;
+	}
+	
+	bin_loader(ip, np);
+	iput(ip);
+	
+	np->parent = p;
+	np->state = RUNNABLE;
+	
+	return np->pid;
 }
 
 uint64 sys_set_priority(long long prio)
 {
-	// TODO: your job is to complete the sys call
-	return -1;
+	if (prio < 2) {
+		return -1;
+	}
+	
+	struct proc *p = curr_proc();
+	p->priority = prio;
+	p->pass = BIG_STRIDE / prio;
+	
+	return prio;
+}
+
+uint64 sys_mmap(uint64 start, uint64 len, int prot, int flags, int fd)
+{
+	struct proc *p = curr_proc();
+	
+	if (start % PGSIZE != 0) return -1;
+	if (len == 0) return 0;
+	if ((prot & ~0x7) != 0) return -1;
+	if ((prot & 0x7) == 0) return -1;
+	
+	len = PGROUNDUP(len);
+	
+	for (uint64 addr = start; addr < start + len; addr += PGSIZE) {
+		if (walkaddr(p->pagetable, addr) != 0) {
+			return -1;
+		}
+	}
+	
+	int pte_flags = PTE_V | PTE_U;
+	if (prot & 0x1) pte_flags |= PTE_R;
+	if (prot & 0x2) pte_flags |= PTE_W;
+	if (prot & 0x4) pte_flags |= PTE_X;
+	
+	for (uint64 addr = start; addr < start + len; addr += PGSIZE) {
+		void *pa = kalloc();
+		
+		if (pa == 0) {
+			uvmunmap(p->pagetable, start, (addr - start) / PGSIZE, 1);
+			return -1;
+		}
+		
+		memset(pa, 0, PGSIZE);
+		
+		if (mappages(p->pagetable, addr, PGSIZE, (uint64)pa, pte_flags) != 0) {
+			kfree(pa);
+			uvmunmap(p->pagetable, start, (addr - start) / PGSIZE, 1);
+			return -1;
+		}
+	}
+	
+	return 0;
+}
+
+uint64 sys_munmap(uint64 start, uint64 len)
+{
+	struct proc *p = curr_proc();
+	
+	if (start % PGSIZE != 0) return -1;
+	if (len == 0) return 0;
+	
+	len = PGROUNDUP(len);
+	
+	for (uint64 addr = start; addr < start + len; addr += PGSIZE) {
+		if (walkaddr(p->pagetable, addr) == 0) {
+			return -1;
+		}
+	}
+	
+	uvmunmap(p->pagetable, start, len / PGSIZE, 1);
+	
+	return 0;
 }
 
 uint64 sys_openat(uint64 va, uint64 omode, uint64 _flags)
@@ -177,19 +292,129 @@ uint64 sys_close(int fd)
 	return 0;
 }
 
-int sys_fstat(int fd,uint64 stat){
-	//TODO: your job is to complete the syscall
-	return -1;
+int sys_fstat(int fd, uint64 stat)
+{
+	if (fd < 0 || fd >= FD_BUFFER_SIZE) {
+		return -1;
+	}
+	
+	struct proc *p = curr_proc();
+	struct file *f = p->files[fd];
+	
+	if (f == NULL || f->type != FD_INODE) {
+		return -1;
+	}
+	
+	struct inode *ip = f->ip;
+	ivalid(ip);
+	
+	struct Stat st;
+	st.dev = 0;
+	st.ino = ip->inum;
+	st.nlink = ip->nlink;
+	
+	if (ip->type == T_DIR) {
+		st.mode = S_IFDIR;
+	} else if (ip->type == T_FILE) {
+		st.mode = S_IFREG;
+	} else {
+		st.mode = 0;
+	}
+	
+	for (int i = 0; i < 7; i++) {
+		st.pad[i] = 0;
+	}
+	
+	if (copyout(p->pagetable, stat, (char *)&st, sizeof(st)) < 0) {
+		return -1;
+	}
+	
+	return 0;
 }
 
-int sys_linkat(int olddirfd, uint64 oldpath, int newdirfd, uint64 newpath, uint64 flags){
-	//TODO: your job is to complete the syscall
-	return -1;
+int sys_linkat(int olddirfd, uint64 oldpath, int newdirfd, uint64 newpath, uint64 flags)
+{
+	struct proc *p = curr_proc();
+	char old[200], new[200];
+	
+	if (copyinstr(p->pagetable, old, oldpath, 200) < 0) {
+		return -1;
+	}
+	if (copyinstr(p->pagetable, new, newpath, 200) < 0) {
+		return -1;
+	}
+	
+	if (strncmp(old, new, 200) == 0) {
+		return -1;
+	}
+	
+	struct inode *ip = namei(old);
+	if (ip == 0) {
+		return -1;
+	}
+	
+	ivalid(ip);
+	
+	struct inode *root = root_dir();
+	if (root == 0) {
+		iput(ip);
+		return -1;
+	}
+	
+	if (dirlink(root, new, ip->inum) < 0) {
+		iput(root);
+		iput(ip);
+		return -1;
+	}
+	
+	ip->nlink++;
+	iupdate(ip);
+	
+	iput(root);
+	iput(ip);
+	
+	return 0;
 }
 
-int sys_unlinkat(int dirfd, uint64 name, uint64 flags){
-	//TODO: your job is to complete the syscall
-	return -1;
+int sys_unlinkat(int dirfd, uint64 name, uint64 flags)
+{
+	struct proc *p = curr_proc();
+	char path[200];
+	
+	if (copyinstr(p->pagetable, path, name, 200) < 0) {
+		return -1;
+	}
+	
+	struct inode *root = root_dir();
+	if (root == 0) {
+		return -1;
+	}
+	
+	uint off;
+	struct inode *ip = dirlookup(root, path, &off);
+	if (ip == 0) {
+		iput(root);
+		return -1;  
+	}
+	
+	ivalid(ip);
+	
+	struct dirent de;
+	memset(&de, 0, sizeof(de));
+	if (writei(root, 0, (uint64)&de, off, sizeof(de)) != sizeof(de)) {
+		iput(root);
+		iput(ip);
+		return -1;
+	}
+	
+	iput(root);
+	
+	ip->nlink--;
+	iupdate(ip);
+	
+	iput(ip);
+	
+	return 0;
 }
 
 extern char trap_page[];
@@ -202,6 +427,11 @@ void syscall()
 			   trapframe->a3, trapframe->a4, trapframe->a5 };
 	tracef("syscall %d args = [%x, %x, %x, %x, %x, %x]", id, args[0],
 	       args[1], args[2], args[3], args[4], args[5]);
+
+	if (id >= 0 && id < MAX_SYSCALL_NUM) {
+		curr_proc()->syscall_times[id]++;
+	}
+
 	switch (id) {
 	case SYS_write:
 		ret = sys_write(args[0], args[1], args[2]);
@@ -247,8 +477,21 @@ void syscall()
 		break;
 	case SYS_unlinkat:
 	    ret = sys_unlinkat(args[0],args[1],args[2]);
+		break;
 	case SYS_spawn:
 		ret = sys_spawn(args[0]);
+		break;
+	case SYS_task_info:
+		ret = sys_task_info((struct TaskInfo *)args[0]);
+		break;
+	case SYS_mmap:
+		ret = sys_mmap(args[0], args[1], args[2], args[3], args[4]);
+		break;
+	case SYS_munmap:
+		ret = sys_munmap(args[0], args[1]);
+		break;
+	case SYS_set_priority:
+		ret = sys_set_priority(args[0]);
 		break;
 	default:
 		ret = -1;

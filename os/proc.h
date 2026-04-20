@@ -44,7 +44,30 @@ struct proc {
 	struct proc *parent; // Parent process
 	uint64 exit_code;
 	struct file *files
-		[FD_BUFFER_SIZE]; //File descriptor table, using to record the files opened by the process
+	[FD_BUFFER_SIZE]; //File descriptor table, using to record the files opened by the process
+	
+	unsigned int syscall_times[500];
+	uint64 start_time;
+
+	int priority;
+	uint64 stride;
+	uint64 pass;
+};
+
+#define MAX_SYSCALL_NUM 500
+#define BIG_STRIDE 65536
+
+typedef enum {
+    UnInit = 0,
+    Ready = 1,
+    Running = 2,
+    Exited = 3
+} TaskStatus;
+
+struct TaskInfo {
+    TaskStatus status;
+    unsigned int syscall_times[MAX_SYSCALL_NUM];
+    int time;
 };
 
 int cpuid();
@@ -54,6 +77,7 @@ void proc_init();
 void scheduler() __attribute__((noreturn));
 void sched();
 void yield();
+void freeproc(struct proc *);
 int fork();
 int exec(char *, char **);
 int wait(int, int *);

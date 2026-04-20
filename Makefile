@@ -23,15 +23,15 @@ OBJS = $(C_OBJS) $(AS_OBJS)
 
 HEADER_DEP = $(addsuffix .d, $(basename $(C_OBJS)))
 
-ifeq (,$(findstring initproc.o,$(OBJS)))
-	AS_OBJS += $(BUILDDIR)/$K/initproc.o
-endif
+# ifeq (,$(findstring initproc.o,$(OBJS)))
+# 	AS_OBJS += $(BUILDDIR)/$K/initproc.o
+# endif
 
 INIT_PROC ?= usershell
 
-$(K)/initproc.o: $K/initproc.S
-$(K)/initproc.S: scripts/initproc.py .FORCE
-	@$(PY) scripts/initproc.py $(INIT_PROC)
+# $(K)/initproc.o: $K/initproc.S
+# $(K)/initproc.S: scripts/initproc.py .FORCE
+# 	@$(PY) scripts/initproc.py $(INIT_PROC)
 
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb
 CFLAGS += -MD
@@ -81,7 +81,7 @@ $(HEADER_DEP): $(BUILDDIR)/$K/%.d : $K/%.c
         sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
         rm -f $@.$$$$
 
-INIT_PROC ?= usershell
+# INIT_PROC ?= usershell
 
 build: build/kernel
 
