@@ -197,53 +197,42 @@ uint64 sys_spawn(uint64 va)
 {
 	struct proc *p = curr_proc();
 	
-	// get filename from user space
 	char name[200];
 	if (copyinstr(p->pagetable, name, va, 200) < 0) {
 		return -1;
 	}
 	
-	//check if program exists
 	int id = get_id_by_name(name);
 	if (id < 0) {
 		return -1;
 	}
-	//allocate new process
 	struct proc *np = allocproc();
 	if (np == 0) {
 		return -1;
 	}
-	// load program into new process
 	if (loader(id, np) < 0) {
 		freeproc(np);
 		return -1;
 	}
-	//set up parent and child rela
 	np->parent = p;
-	// make process runnable and add to queue
 	np->state = RUNNABLE;
 	// add_task(np);
 	
-	// return child PID
 	return np->pid;
 }
 
 uint64 sys_set_priority(long long prio)
 {
-	// Check if priority is valid (must be >= 2)
 	if (prio < 2) {
 		return -1;
 	}
 	
 	struct proc *p = curr_proc();
 	
-	// Set new priority
 	p->priority = prio;
 	
-	// Update pass value based on new priority
 	p->pass = BIG_STRIDE / prio;
 	
-	// Return the priority that was set
 	return prio;
 }
 

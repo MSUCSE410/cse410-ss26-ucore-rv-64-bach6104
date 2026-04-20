@@ -141,10 +141,8 @@ void scheduler()
 		
 		p = min_proc;
 		
-		// Update stride for selected process
 		p->stride += p->pass;
 		
-		// Set start time on first run
 		if (p->start_time == 0) {
 			p->start_time = get_cycle();
 		}
