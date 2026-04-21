@@ -114,6 +114,7 @@ struct inode *ialloc(uint dev, short type)
 		if (dip->type == 0) { // a free inode
 			memset(dip, 0, sizeof(*dip));
 			dip->type = type;
+			//init nlink to 1 entry
 			dip->nlink = 1;
 			bwrite(bp);
 			brelse(bp);
@@ -138,7 +139,7 @@ void iupdate(struct inode *ip)
 	dip->type = ip->type;
 	dip->size = ip->size;
 	// LAB4: you may need to update link count here
-	dip->nlink = ip->nlink;
+	dip->nlink = ip->nlink; 
 	memmove(dip->addrs, ip->addrs, sizeof(ip->addrs));
 	bwrite(bp);
 	brelse(bp);
@@ -192,7 +193,7 @@ void ivalid(struct inode *ip)
 		ip->type = dip->type;
 		ip->size = dip->size;
 		// LAB4: You may need to get lint count here
-		ip->nlink = dip->nlink;
+		ip->nlink = dip->nlink; //read nlink when load 
 		memmove(ip->addrs, dip->addrs, sizeof(ip->addrs));
 		brelse(bp);
 		ip->valid = 1;
@@ -212,7 +213,6 @@ void iput(struct inode *ip)
 {
 	// LAB4: Unmark the condition and change link count variable name (nlink) if needed
 	if (ip->ref == 1 && ip->valid && ip->nlink == 0) {
-		// inode has no links and no other references: truncate and free.
 		itrunc(ip);
 		ip->type = 0;
 		iupdate(ip);

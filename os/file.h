@@ -7,8 +7,8 @@
 
 #define PIPESIZE (512)
 #define FILEPOOLSIZE (NPROC * FD_BUFFER_SIZE)
-#define S_IFDIR  0x040000  
-#define S_IFREG  0x100000  
+#define S_IFDIR  0x040000  //dir type
+#define S_IFREG  0x100000  //reg file type 
 
 // in-memory copy of an inode,it can be used to quickly locate file entities on disk
 struct inode {
@@ -21,14 +21,16 @@ struct inode {
 	uint addrs[NDIRECT + 1];
 	// LAB4: You may need to add link count here
 	short nlink;
+	//nlink load RAM 
 };
 
+//stat for fstat function
 struct Stat {
-	uint64 dev;      
-	uint64 ino;      
-	uint32 mode;     
+	uint64 dev;      //dev
+	uint64 ino;      //inode num
+	uint32 mode;     //file type
 	uint32 nlink;    
-	uint64 pad[7];  
+	uint64 pad[7];  //linux arch
 };
 
 // Defines a file in memory that provides information about the current use of the file and the corresponding inode location

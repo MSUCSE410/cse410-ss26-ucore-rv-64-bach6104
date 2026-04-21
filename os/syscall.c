@@ -294,6 +294,7 @@ uint64 sys_close(int fd)
 
 int sys_fstat(int fd, uint64 stat)
 {
+	//check for fd
 	if (fd < 0 || fd >= FD_BUFFER_SIZE) {
 		return -1;
 	}
@@ -301,18 +302,21 @@ int sys_fstat(int fd, uint64 stat)
 	struct proc *p = curr_proc();
 	struct file *f = p->files[fd];
 	
+	//check if file exists and is an inode file 
 	if (f == NULL || f->type != FD_INODE) {
 		return -1;
 	}
 	
+
 	struct inode *ip = f->ip;
-	ivalid(ip);
+	ivalid(ip); //load inode
 	
 	struct Stat st;
 	st.dev = 0;
 	st.ino = ip->inum;
 	st.nlink = ip->nlink;
 	
+	//set mode based on file type
 	if (ip->type == T_DIR) {
 		st.mode = S_IFDIR;
 	} else if (ip->type == T_FILE) {
@@ -337,17 +341,18 @@ int sys_linkat(int olddirfd, uint64 oldpath, int newdirfd, uint64 newpath, uint6
 	struct proc *p = curr_proc();
 	char old[200], new[200];
 	
+	//get old and new path
 	if (copyinstr(p->pagetable, old, oldpath, 200) < 0) {
 		return -1;
 	}
 	if (copyinstr(p->pagetable, new, newpath, 200) < 0) {
 		return -1;
 	}
-	
+	//check if the same
 	if (strncmp(old, new, 200) == 0) {
 		return -1;
 	}
-	
+	//find inode for old
 	struct inode *ip = namei(old);
 	if (ip == 0) {
 		return -1;
@@ -360,7 +365,7 @@ int sys_linkat(int olddirfd, uint64 oldpath, int newdirfd, uint64 newpath, uint6
 		iput(ip);
 		return -1;
 	}
-	
+	//create new entry
 	if (dirlink(root, new, ip->inum) < 0) {
 		iput(root);
 		iput(ip);
@@ -380,7 +385,7 @@ int sys_unlinkat(int dirfd, uint64 name, uint64 flags)
 {
 	struct proc *p = curr_proc();
 	char path[200];
-	
+	//get path 
 	if (copyinstr(p->pagetable, path, name, 200) < 0) {
 		return -1;
 	}
@@ -389,7 +394,7 @@ int sys_unlinkat(int dirfd, uint64 name, uint64 flags)
 	if (root == 0) {
 		return -1;
 	}
-	
+	//find directory entry
 	uint off;
 	struct inode *ip = dirlookup(root, path, &off);
 	if (ip == 0) {
@@ -398,7 +403,7 @@ int sys_unlinkat(int dirfd, uint64 name, uint64 flags)
 	}
 	
 	ivalid(ip);
-	
+	//clear directory
 	struct dirent de;
 	memset(&de, 0, sizeof(de));
 	if (writei(root, 0, (uint64)&de, off, sizeof(de)) != sizeof(de)) {
